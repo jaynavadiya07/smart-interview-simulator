@@ -1,0 +1,8 @@
+# Compiled files
+
+*.out
+*.exe
+
+# History file
+
+interview.txt
