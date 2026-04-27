@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <thread>
+#include <atomic>
 
 using namespace std;
 
@@ -17,7 +18,11 @@ using namespace std;
 #define CYAN "\033[36m"
 #define RESET "\033[0m"
 
-// UI DESIGN
+// GLOBALS (thread input)
+atomic<bool> answered(false);
+int userAnswer;
+
+// UI
 void line() {
     cout << "--------------------------------------------------\n";
 }
@@ -28,90 +33,83 @@ void title(string text) {
     line();
 }
 
-// Loading Animation
+// Loading
 void loadingAnimation(string text) {
     cout << "\n   " << text;
     for (int i = 0; i < 5; i++) {
         cout << ".";
         cout.flush();
-        this_thread::sleep_for(chrono::milliseconds(400));
+        this_thread::sleep_for(chrono::milliseconds(300));
     }
     cout << "\n\n";
 }
 
-// Progress Bar
+// Progress
 void showProgress(int current, int total) {
-    int barWidth = 30;
+    int width = 30;
     float progress = (float)current / total;
 
     cout << "\n   Progress: [";
+    int pos = width * progress;
 
-    int pos = barWidth * progress;
-    for (int i = 0; i < barWidth; ++i) {
+    for (int i = 0; i < width; i++) {
         if (i < pos) cout << "█";
         else cout << "-";
     }
 
-    cout << "] " << int(progress * 100.0) << "%\n";
+    cout << "] " << int(progress * 100) << "%\n";
 }
 
-// Question Structure
+// Question
 struct Question {
     string question;
     string options[3];
     int correct;
+    string difficulty;
 };
 
-// Question Bank
+// Questions
 vector<Question> questions = {
-    {"What is C++?", {"Programming Language", "OS", "Game"}, 1},
-    {"What is OOP?", {"Output Process", "Object Oriented Programming", "None"}, 2},
-    {"What is Function?", {"Variable", "Loop", "Block of code"}, 3},
-    {"What is Array?", {"Loop", "Collection of elements", "Condition"}, 2},
-    {"What is Loop?", {"Variable", "Function", "Repetition"}, 3},
-    {"Comment symbol?", {"//", "**", "##"}, 1},
-    {"Valid data type?", {"integer", "int", "number"}, 2},
-    {"Which is loop?", {"for", "int", "char"}, 1},
-    {"Which is keyword?", {"class", "apple", "car"}, 1},
-    {"OOP pillar?", {"Encapsulation", "Cooking", "Driving"}, 1}
+    {"What is C++?", {"Programming Language", "OS", "Game"}, 1, "easy"},
+    {"What is OOP?", {"Output Process", "Object Oriented Programming", "None"}, 2, "easy"},
+    {"What is Function?", {"Variable", "Loop", "Block of code"}, 3, "easy"},
+
+    {"What is Array?", {"Loop", "Collection of elements", "Condition"}, 2, "medium"},
+    {"What is Loop?", {"Variable", "Function", "Repetition"}, 3, "medium"},
+    {"Comment symbol?", {"//", "**", "##"}, 1, "medium"},
+
+    {"Valid data type?", {"integer", "int", "number"}, 2, "hard"},
+    {"Which is loop?", {"for", "int", "char"}, 1, "hard"},
+    {"Which is keyword?", {"class", "apple", "car"}, 1, "hard"},
+    {"OOP pillar?", {"Encapsulation", "Cooking", "Driving"}, 1, "hard"}
 };
 
-// Safe Input
-int getValidInput() {
-    int x;
-    cin >> x;
-
-    while (cin.fail() || x < 1 || x > 3) {
-        cin.clear();
-        cin.ignore(numeric_limits<streamsize>::max(), '\n');
-        cout << RED << "   Invalid! Enter 1-3: " << RESET;
-        cin >> x;
-    }
-    return x;
-}
-
-// Rank System
-string getRank(int percentage) {
-    if (percentage >= 80) return "Expert";
-    else if (percentage >= 60) return "Intermediate";
-    else if (percentage >= 40) return "Beginner";
+// Rank
+string getRank(int p) {
+    if (p >= 80) return "Expert";
+    else if (p >= 60) return "Intermediate";
+    else if (p >= 40) return "Beginner";
     else return "Needs Improvement";
 }
 
-// Save Result
-void saveResult(string name, int score, int total, int percentage) {
+// Input thread
+void inputThread() {
+    cin >> userAnswer;
+    answered = true;
+}
+
+// Save
+void saveResult(string name, int score, int total, int per) {
     ofstream file("interview.txt", ios::app);
     time_t now = time(0);
 
     file << "\n----------------------------------------\n";
-    file << "Name  : " << name << endl;
-    file << "Score : " << score << "/" << total << endl;
-    file << "Result: " << percentage << "%" << endl;
-    file << "Rank  : " << getRank(percentage) << endl;
-    file << "Date  : " << ctime(&now);
+    file << "Name: " << name << endl;
+    file << "Score: " << score << "/" << total << endl;
+    file << "Result: " << per << "%\n";
+    file << "Rank: " << getRank(per) << endl;
+    file << "Date: " << ctime(&now);
     file << "----------------------------------------\n";
-
-    file.close();
 }
 
 // View History
@@ -129,17 +127,23 @@ void viewHistory() {
     while (getline(file, line)) {
         cout << "   " << line << endl;
     }
+
+    cout << "\n   Press Enter to go back...";
+    cin.ignore();
+    cin.get();
 }
 
 // Clear History
 void clearHistory() {
     ofstream file("interview.txt", ios::trunc);
     file.close();
+
     cout << YELLOW << "\n   History Cleared Successfully!\n\n" << RESET;
 }
 
 // Interview
 void startInterview() {
+
     string name;
 
     title("START INTERVIEW");
@@ -150,69 +154,91 @@ void startInterview() {
 
     loadingAnimation("Preparing your interview");
 
-    srand(time(0));
-    random_shuffle(questions.begin(), questions.end());
+    srand(time(0) + rand());
+
+    vector<Question> easy, med, hard;
+
+    for (auto &q : questions) {
+        if (q.difficulty == "easy") easy.push_back(q);
+        else if (q.difficulty == "medium") med.push_back(q);
+        else hard.push_back(q);
+    }
+
+    random_shuffle(easy.begin(), easy.end());
+    random_shuffle(med.begin(), med.end());
+    random_shuffle(hard.begin(), hard.end());
+
+    vector<Question> finalQ;
+
+    for (int i = 0; i < 2; i++) finalQ.push_back(easy[i]);
+    for (int i = 0; i < 2; i++) finalQ.push_back(med[i]);
+    finalQ.push_back(hard[0]);
+
+    random_shuffle(finalQ.begin(), finalQ.end());
 
     int score = 0;
-    int total = 5;
 
-    for (int i = 0; i < total; i++) {
+    for (int i = 0; i < 5; i++) {
 
         cout << "\n";
         line();
 
-        cout << CYAN << "   Q" << i + 1 << ": " << questions[i].question << RESET << endl;
+        cout << CYAN << "   Q" << i + 1 << ": " << finalQ[i].question << RESET << endl;
 
         for (int j = 0; j < 3; j++) {
-            cout << "     " << j + 1 << ". " << questions[i].options[j] << endl;
+            cout << "     " << j + 1 << ". " << finalQ[i].options[j] << endl;
         }
 
         cout << YELLOW << "\n   Answer (10 sec): " << RESET;
 
-        auto start = chrono::steady_clock::now();
-        int ans = getValidInput();
-        auto end = chrono::steady_clock::now();
+        answered = false;
+        thread t(inputThread);
 
-        auto time_taken = chrono::duration_cast<chrono::seconds>(end - start);
+        int timeLimit = 10;
 
-        if (time_taken.count() > 10) {
-            cout << RED << "   ⏱ Time Up!\n" << RESET;
-        }
-        else if (ans == questions[i].correct) {
-            cout << GREEN << "   ✔ Correct!\n" << RESET;
-            score++;
-        }
-        else {
-            cout << RED << "   ✘ Wrong!\n" << RESET;
+        for (int sec = 0; sec < timeLimit; sec++) {
+            this_thread::sleep_for(chrono::seconds(1));
+
+            if (answered) break;
+
+            cout << "\r   Time left: " << (timeLimit - sec - 1) << " sec " << flush;
         }
 
-        showProgress(i + 1, total);
-        this_thread::sleep_for(chrono::milliseconds(500));
+        cout << endl;
+
+        if (answered) {
+            t.join();
+
+            if (userAnswer == finalQ[i].correct) {
+                cout << GREEN << "   ✔ Correct!\n" << RESET;
+                score++;
+            } else {
+                cout << RED << "   ✘ Wrong!\n" << RESET;
+            }
+        } else {
+            cout << RED << "   ⏱ Time Up! Skipped\n" << RESET;
+            t.detach();
+        }
+
+        showProgress(i + 1, 5);
     }
 
-    int percentage = (score * 100) / total;
+    int per = (score * 100) / 5;
 
-    cout << "\n";
     title("FINAL RESULT");
 
     cout << "   Name     : " << name << endl;
-    cout << "   Correct  : " << score << endl;
-    cout << "   Wrong    : " << total - score << endl;
-    cout << "   Score    : " << percentage << "%" << endl;
-    cout << "   Rank     : " << getRank(percentage) << endl;
+    cout << "   Score    : " << per << "%\n";
+    cout << "   Rank     : " << getRank(per) << endl;
 
-    cout << "\n";
-    line();
-
-    saveResult(name, score, total, percentage);
+    saveResult(name, score, 5, per);
 }
 
 // MAIN
 int main() {
-    int choice;
+    int ch;
 
     do {
-        cout << "\n";
         title("SMART INTERVIEW SIMULATOR");
 
         cout << "   1. Start Interview\n";
@@ -221,7 +247,7 @@ int main() {
         cout << "   4. Exit\n\n";
 
         cout << "   Enter choice: ";
-        cin >> choice;
+        cin >> ch;
 
         if (cin.fail()) {
             cin.clear();
@@ -230,7 +256,7 @@ int main() {
             continue;
         }
 
-        switch (choice) {
+        switch (ch) {
             case 1: startInterview(); break;
             case 2: viewHistory(); break;
             case 3: clearHistory(); break;
@@ -238,7 +264,7 @@ int main() {
             default: cout << RED << "\n   Invalid choice!\n" << RESET;
         }
 
-    } while (choice != 4);
+    } while (ch != 4);
 
     cout << GREEN << "\n   Thank You!\n\n" << RESET;
     return 0;
